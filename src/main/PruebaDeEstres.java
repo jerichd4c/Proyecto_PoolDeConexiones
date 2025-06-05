@@ -17,7 +17,7 @@ public class PruebaDeEstres {
     private static long tiempoInicial;
     private static long tiempoFinal;
 
-    //nuevas variables: poolManager y pooledConnection
+    //nuevas variables: poolManager
 
     private static PoolManager poolManager;
 
@@ -37,6 +37,8 @@ public class PruebaDeEstres {
 
     cargarBBD();
     verificarConexion();
+    
+    //crearTablaPrueba();
     asignarNUM_CONEXIONES(mainScanner);
     //ya el scanner no se usara mas, se cierra para evitar filtramiento de recursos
     mainScanner.close();
@@ -44,7 +46,6 @@ public class PruebaDeEstres {
     //probar PoolDeConexiones singleton
     probarInstancia();
 
-    crearTablaPrueba();
     //hacer despues de crear tabla para que haga (select * from tabla) de una
     tiempoInicial = System.currentTimeMillis(); 
     pruebaDeEstres();      
@@ -86,15 +87,17 @@ public class PruebaDeEstres {
     //metodo para crear tabla y registros (5000)
     private static void crearTablaPrueba() {
 
-        try {
-            PoolDeConexiones pool = PoolDeConexiones.getInstance();
-            pool.ejecutarQuery("DROP TABLE IF EXISTS tabla ");
-            pool.ejecutarQuery("CREATE TABLE tabla (" + "id SERIAL PRIMARY KEY, " + "descript VARCHAR(10000))");
+        try (Connection con = DriverManager.getConnection(url, user, password);
+        //variable que almacena sentencias SQL (CRUD)
+            Statement stmt = con.createStatement()) {
+                //si la tabla existe, se elimina para hacer la prueba de estres desde 0
+            stmt.executeUpdate("DROP TABLE IF EXISTS tabla ");
+            stmt.executeUpdate("CREATE TABLE tabla (" + "id SERIAL PRIMARY KEY, " + "descript VARCHAR(10000))");
                 //crear 5000 registros NO CONFUNDIR CON NUM_CONEXIONES YA QUE SI SE USA SE PUEDEN CREAR MAS REGISTROS DE LO HABITUAL PLS
                 //texto de ejemplo:
             String texto = "a".repeat(10000);
             for (int i=0; i<5000; i++) {
-                pool.ejecutarQuery("INSERT INTO tabla (descript) VALUES ('" + texto + "')");
+                stmt.executeUpdate("INSERT INTO tabla (descript) VALUES ('" + texto + "')");
             }
             System.out.println("Tabla creada exitosamente");
         } catch (SQLException e) {
@@ -116,7 +119,7 @@ public class PruebaDeEstres {
     }
 
     //metodo para verificar que PoolDeConexiones sea una unica instancia
-    //verifica el hashcode ( de objeto)
+    //verifica el hashcode (de objeto)
     private static void probarInstancia() {
 
         //verificar que no se repita instancia de pool 
@@ -156,9 +159,9 @@ public class PruebaDeEstres {
     System.out.println("manager3 apuntando a: " + manager3.getPool().hashCode());
 
     if (manager1.getPool() == pool1 && manager2.getPool() == pool1 && manager3.getPool() == pool1) {
-        System.out.println("Las instancias del pool manager son iguales");
+        System.out.println("Las instancias que usan los pool manager son iguales");
     } else {
-        System.err.println("Las instancias del pool manager son diferentes (no es SINGLETON)");
+        System.err.println("Las instancias que usan los manager son diferentes (no es SINGLETON)");
     }
 
     }
@@ -170,13 +173,16 @@ public class PruebaDeEstres {
             //la variable ID se le sumara +1 despues de cada FOR loop y este se printea al final del metodo
             final int ID=i+1;
             new Thread(() -> {
-
+                
+                Connection con = null;
                 float inicio = System.currentTimeMillis() - tiempoInicial;
                 String estado=" ";
                 
-                try (Connection con = poolManager.getConnection();
-                    //createStatemen llama al metodo sobreescrito de la clase PooledConnection
-                    Statement stmt = con.createStatement(); 
+                try { 
+                    //obtiene la conexion a traves de pool manager
+                    con = poolManager.getConnection();
+                    //createStatement llama al metodo sobreescrito de la clase PooledConnection
+                    try (Statement stmt = con.createStatement(); 
                     //variable que almacena la consulta SQL en forma de array (select)
                     ResultSet rs= stmt.executeQuery("SELECT * FROM tabla")) {
 
@@ -187,7 +193,9 @@ public class PruebaDeEstres {
                         hilosProcesados++;
                         estado="Hilo procesado";
 
-                    } 
+                        } 
+                    }
+
                 } catch (SQLException e) {
                     synchronized (PruebaDeEstres.class) {
                         hilosPerdidos++;
@@ -195,10 +203,11 @@ public class PruebaDeEstres {
                         estado="Hilo perdido: " + e.getMessage();
                     }
                     
-                // al final del try-catch se llama automaticamente a close(), sin embargo como el metodo 
-                // estara sobreescrito esta ira al final de la lista de conexDisponibles
-
                 } finally {
+                    //si hay una conexion en la variable la devuelve al pool (lista)
+                    if (con != null) {
+                        poolManager.returnConnectiontoPool(con);
+                    }
 
                     //NT: currentTimeMillis() agarra el tiempo del reloj, hacer diferencia=
                     float fin= System.currentTimeMillis() - tiempoInicial;
@@ -208,8 +217,8 @@ public class PruebaDeEstres {
                         if (hilosImpresos == NUM_CONEXIONES) {
                             //proceeso termino, se le notificara a la consola que ya se imprimeron los HILOS, para que el resumen salga de ultimo
                             System.out.notifyAll(); 
+                       
                         }
-
                     }
                     
                 }
