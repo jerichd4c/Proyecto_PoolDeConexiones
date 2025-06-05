@@ -13,8 +13,9 @@ public class PoolDeConexiones {
     private int maxConexiones;
     private int minConexiones;
     private int incrementoConex;
-    //variable que controla el timeout
+    //variables que controlan el timeout
     private int timeout;
+    private int hilosActivos=0; 
     //variables para llevar control de las conexiones disponibles y usadas
     private final LinkedList<Connection> conexionesDisponibles = new LinkedList<>();
     private final LinkedList<Connection> conexionesUsadas = new LinkedList<>();
@@ -71,27 +72,37 @@ public class PoolDeConexiones {
 
     //metodo para obtener una conexion del pool
     public synchronized Connection getConnection() throws SQLException {
+        //se ejecuta el metodo, hay 1 hilo activo
+    try {
+        incrementarHilosActivos();
+
     // connection timeout: variable local para controlar el tiempo de espera de la conexion
         long tiempoInicio= System.currentTimeMillis();
 
-     //si no hay conexiones disponibles usa el metodo para crecer el pool usando incrementoConex
-    if (conexionesDisponibles.isEmpty() && conexionesTotales() < maxConexiones) {
-        crecerPool();
-    }
+        //implementacion del nuevo metodo -> QUITAR // si se quiere activar
+        //final long timeout = calcularTimeout();
 
-    while (conexionesDisponibles.isEmpty()) {
+        while (conexionesDisponibles.isEmpty()) {
+
+        //si no hay conexiones disponibles usa el metodo para crecer el pool usando incrementoConex
+        if (conexionesDisponibles.isEmpty() && conexionesTotales() < maxConexiones) {
+        crecerPool();
+        }
+
         //si no hay conexiones disponibles, espera en bloques pequeños
         try {
             wait(100); 
+
+            // connection timeout: cuando el tiempo inicial supere el tiempo de espera establecido
+            if (System.currentTimeMillis() - tiempoInicio > timeout) {
+            throw new SQLException("Connection timeout.");
+
+            }            
         } catch (InterruptedException e) {
             //si se interrumpe la espera, saldra un mensaje de error que se interrumpio el metodo
             Thread.currentThread().interrupt();
-            throw new SQLException("Error al esperar la conexion disponible: " + e.getMessage());
+            throw new SQLException("Error al esperar la conexion disponible: " + timeout);
             }
-        // connection timeout: cuando el tiempo inicial supere el tiempo de espera establecido
-        if (System.currentTimeMillis() - tiempoInicio > timeout) {
-            throw new SQLException("Connection timeout.");
-            }        
         }
 
         //remueve la primera conexion disponible de la linkedList de conexiones disponibles y la agrega a la linkedList de conexiones usadas
@@ -99,6 +110,9 @@ public class PoolDeConexiones {
         conexionesUsadas.add(conn);
         //crea una nuevo conexion disponible
         return new PooledConnection(conn, this);
+    } finally {
+        decrementarHilosActivos();
+        }
     }
 
     //metodo para devolver conexiones fisica al pool (usado en PooledConnection)
@@ -123,21 +137,6 @@ public class PoolDeConexiones {
         }
     }
 
-    //metodo para desconectar coneciones y devolverlas al pool
-    public synchronized void desconectar() throws SQLException {
-        for (Connection conn : conexionesDisponibles) {
-            //iterar sobre las conexiones disponibles y cerrarlas
-            conn.close();
-        }
-        for (Connection conn : conexionesUsadas) {
-            //iterar sobre las conexiones usadas y cerrarlas
-            conn.close();
-        }
-        //resetea las listas
-        conexionesDisponibles.clear();
-        conexionesUsadas.clear();
-    }
-
     //metodo para verificar el total de conexiones de un pool (auxiliar)
     private synchronized int conexionesTotales() {
         //sumara la cantidad de conexiones disponibles y usadas, para asi tener el total del pool
@@ -155,11 +154,45 @@ public class PoolDeConexiones {
         }
     }
 
-    //metodo para calcular de forma dinamica el timeout de getConnection()
-    public int calcularTimeout(int maxConexiones) {
-        //30 segundos base (o el que se encuentre en configSQL.properties) +1ms por cada 100 tareas pendientes
-        int hilosPendientes;
+    //metodos relacionados a el control del timeout de consultas:
+
+    //metodo para incrementar hilos activos
+    private synchronized void incrementarHilosActivos() {
+        //se le sumara 1 a la variable de hilosActivos, es decir, por cada getConn se supondra que hay un hilo activo
+        hilosActivos++;
     }
+
+    //metodo para decrementar hilos activos
+    private synchronized void decrementarHilosActivos() {
+        //se le restara 1 a la variable de hilosActivos, el hilo termino su ejecucion
+        hilosActivos--;
+    }   
+
+    //metodo para retornar hilos activos
+    private synchronized int getHilosActivos() {
+        return hilosActivos;
+    }
+
+    //metodo final para calcular timeout
+    //NT: metodo experimental
+    // private synchronized long calcularTimeout() {
+    //     int conexTotales=getConexionesTotales();
+    //     int conexUsadas=getConexionesUsadasSize();
+    //     int conexActivas=getHilosActivos();
+    //     //calcular factores del timeout
+    //     //diferencia entre conexiones usadas y total de conexiones
+    //     //NT: usado para calcular la carga actual (la que se hace ANTES de la prueba)
+    //     double factorDeCarga = (double) conexUsadas / Math.max(1, conexTotales);
+    //     //diferencia entre conexiones activas y conexiones maximas (limite del pool)
+    //     //NT: usado para calcular la presion que se esta ejerciendo DURANTE la prueba
+    //     double factorDePresion= (double) conexActivas / Math.max(1, maxConexiones);
+    //     //diferencia entre conexiones max y conex totales entre conec max 
+    //     //NT: usado para calcular la capacidad de crecimiento que puede tener el timeout
+    //     double factordeCrecimiento= (double) (maxConexiones - conexTotales) / Math.max(1, maxConexiones);
+        
+    //     //calcular timeout tomadno en cuenta todos los factores
+    //     return timeout + (long) (timeout * factorDeCarga) + (long) (timeout * factorDePresion) + (long) (timeout * factordeCrecimiento);
+    // }
 
     //metodos getters axuliares para otras clases
 

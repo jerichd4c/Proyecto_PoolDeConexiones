@@ -1,10 +1,10 @@
+import java.io.*;
 import java.sql.*;
+import java.util.*;
 
 public class PruebaDeEstres {
 
     //datos de MI posgreSQL
-    private static String port;
-    private static String DBname;
     private static String url;
     private static  String user;
     private static  String password;
@@ -35,11 +35,15 @@ public class PruebaDeEstres {
 
     java.util.Scanner mainScanner = new java.util.Scanner(System.in);
 
-    asignarDatosBD(mainScanner);
+    cargarBBD();
     verificarConexion();
     asignarNUM_CONEXIONES(mainScanner);
     //ya el scanner no se usara mas, se cierra para evitar filtramiento de recursos
     mainScanner.close();
+
+    //probar PoolDeConexiones singleton
+    probarInstancia();
+
     crearTablaPrueba();
     //hacer despues de crear tabla para que haga (select * from tabla) de una
     tiempoInicial = System.currentTimeMillis(); 
@@ -50,27 +54,25 @@ public class PruebaDeEstres {
 
 //metodos usados (en orden)
 
-    //metodo para verificar la conexion con la base de datos
+    //metodo para cargar variables directamente desde configSQL.properties
+    private static void cargarBBD() {
 
-    private static void asignarDatosBD(java.util.Scanner sc) {
-
-            System.out.println("Indique el puerto de la base de datos: ");
-            port = sc.nextLine();
-            System.out.println("Indique el nombre de la base de datos: ");
-            DBname = sc.nextLine();
-            System.out.println("Indique el usuario de la base de datos: ");
-            user = sc.nextLine();
-            System.out.println("Indique la clave de la base de datos: ");
-            password = sc.nextLine();
-
-            //url final
-            url = "jdbc:postgresql://localhost:" + port + "/" + DBname;
+        Properties config = new Properties();
+        try (InputStream input = PruebaDeEstres.class.getResourceAsStream("resources/configSQL.properties")) {
+            config.load(input);
+        } catch (Exception e) {
+            throw new RuntimeException("Error al cargar la configuracion del pool de conexiones: " + e.getMessage());
+        }
+        url = config.getProperty("url");
+        user = config.getProperty("user");
+        password = config.getProperty("password");
     }
     
+    //metodo para verificar la conexion con la base de datos
     private static void verificarConexion() {
         try (Connection con = DriverManager.getConnection(url, user, password)) {
         if (con != null) {
-            System.out.println("Conexion exitosa");
+            System.out.println("Conexion exitosa, base de datos cargada exitosamente");
         } else {
             System.out.println("Conexion fallida");
             System.exit(1);
@@ -113,6 +115,54 @@ public class PruebaDeEstres {
         }
     }
 
+    //metodo para verificar que PoolDeConexiones sea una unica instancia
+    //verifica el hashcode ( de objeto)
+    private static void probarInstancia() {
+
+        //verificar que no se repita instancia de pool 
+
+    //pool 1
+
+    PoolDeConexiones pool1 = PoolDeConexiones.getInstance();
+    System.out.println("pool 1: " + pool1.hashCode());
+
+    //pool 2
+
+    PoolDeConexiones pool2 = PoolDeConexiones.getInstance();
+    System.out.println("pool 2: " + pool2.hashCode());
+
+    //pool 3
+
+    PoolDeConexiones pool3 = PoolDeConexiones.getInstance();
+    System.out.println("pool 3: " + pool3.hashCode());
+
+
+    //se comparan (es verificado por el hashcode)
+
+    if (pool1 == pool2 && pool2 == pool3) {
+        System.out.println("Las instancias del pool son iguales");
+    } else {
+        System.err.println("Las instancias del pool son diferentes (no es SINGLETON)");
+    }
+
+    //creacion de pool manager
+
+    PoolManager manager1 = new PoolManager();
+    PoolManager manager2 = new PoolManager();
+    PoolManager manager3 = new PoolManager();
+
+    System.out.println("manager1 apuntando a: " + manager1.getPool().hashCode());
+    System.out.println("manager2 apuntando a: " + manager2.getPool().hashCode());
+    System.out.println("manager3 apuntando a: " + manager3.getPool().hashCode());
+
+    if (manager1.getPool() == pool1 && manager2.getPool() == pool1 && manager3.getPool() == pool1) {
+        System.out.println("Las instancias del pool manager son iguales");
+    } else {
+        System.err.println("Las instancias del pool manager son diferentes (no es SINGLETON)");
+    }
+
+    }
+
     //metodo para ejecutar prueba de estres 
     private static void pruebaDeEstres() {
     //NT: cambiar este metodo mas tarde
@@ -125,6 +175,7 @@ public class PruebaDeEstres {
                 String estado=" ";
                 
                 try (Connection con = poolManager.getConnection();
+                    //createStatemen llama al metodo sobreescrito de la clase PooledConnection
                     Statement stmt = con.createStatement(); 
                     //variable que almacena la consulta SQL en forma de array (select)
                     ResultSet rs= stmt.executeQuery("SELECT * FROM tabla")) {
@@ -144,6 +195,9 @@ public class PruebaDeEstres {
                         estado="Hilo perdido: " + e.getMessage();
                     }
                     
+                // al final del try-catch se llama automaticamente a close(), sin embargo como el metodo 
+                // estara sobreescrito esta ira al final de la lista de conexDisponibles
+
                 } finally {
 
                     //NT: currentTimeMillis() agarra el tiempo del reloj, hacer diferencia=

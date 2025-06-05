@@ -14,7 +14,9 @@ public class PooledConnection implements Connection {
 
     //constructor de la clase 
     public PooledConnection(Connection realConnection, PoolDeConexiones pool) {
+        //conexion fisica que esta unido al pool
         this.realConnection = realConnection;
+        //hilos que van al pool
         this.pool = pool;
     }
 
@@ -23,7 +25,7 @@ public class PooledConnection implements Connection {
     @Override
     public void close() throws SQLException {
         if (!isClosed) {
-            //si no esta cerrado cambia status a cerrado
+            //si no esta cerrado cambia status a cerrado (devolver la conex a la lista de conexiones disponibles)
             isClosed = true;
             pool.devolverConexionFisica(realConnection);
         }
@@ -34,12 +36,6 @@ public class PooledConnection implements Connection {
         //si la conexion esta cerrada indica que la conexion se cerro modificando el metodo createStatement con @Override
         if (isClosed) throw new SQLException("Closed Connection");
         return realConnection.createStatement();
-    }
-
-    @Override 
-    public boolean isClosed() {
-        //verifica el estado de la conexion (cerrada/abierta)
-        return isClosed;
     }
 
 }
