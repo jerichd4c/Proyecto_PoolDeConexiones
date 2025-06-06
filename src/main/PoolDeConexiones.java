@@ -85,8 +85,8 @@ public class PoolDeConexiones {
 
         //si no hay conexiones disponibles, espera en bloques pequeños
         try {
-            //timeout en ms 
-            wait(1000); 
+            //esperar hasta encontrar otra conexion disponible
+            wait(100);
 
         } catch (InterruptedException e) {
             //si se interrumpe la espera, saldra un mensaje de error que se interrumpio el metodo
@@ -116,9 +116,6 @@ public class PoolDeConexiones {
 
     //metodo para crecer un pool de conexiones 
     public synchronized void crecerPool() throws SQLException {
-        //metodo Math.min tomara el menor valor entre incConex y la resta y ese sera el valor de crecimiento
-        //caso 1: incConex=5 y resta de las dos var 100 - 10 = 90, min(5, 90) = 5 crecimiento
-        //caso 2: incConex=5 y resta de las dos var 100 - 97 = 3, min(5, 3) = 3 crecimiento
         int crecimiento = incrementoConex;
         for (int i=0 ; i<crecimiento ; i++) {
             conexionesDisponibles.add(crearConexionFisica());

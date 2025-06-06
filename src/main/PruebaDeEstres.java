@@ -17,7 +17,7 @@ public class PruebaDeEstres {
     private static long tiempoInicial;
     private static long tiempoFinal;
 
-    //nuevas variables: poolManager
+    //nueva variable: poolManager
 
     private static PoolManager poolManager;
 
@@ -38,13 +38,14 @@ public class PruebaDeEstres {
     cargarBBD();
     verificarConexion();
     
-    //crearTablaPrueba();
     asignarNUM_CONEXIONES(mainScanner);
     //ya el scanner no se usara mas, se cierra para evitar filtramiento de recursos
     mainScanner.close();
 
     //probar PoolDeConexiones singleton
     probarInstancia();
+    
+    //crearTablaPrueba();
 
     //hacer despues de crear tabla para que haga (select * from tabla) de una
     tiempoInicial = System.currentTimeMillis(); 
@@ -186,8 +187,8 @@ public class PruebaDeEstres {
                     //variable que almacena la consulta SQL en forma de array (select)
                     ResultSet rs= stmt.executeQuery("SELECT * FROM tabla")) {
 
-                    //vacio para simular carga real mientras se mueve por el array
-                    while (rs.next()) {}
+                    //vacio para simular carga real mientras se mueve por el array, quitar si se quiere gastar mas recursos
+                    //while (rs.next()) {}
 
                     synchronized (PruebaDeEstres.class) {
                         hilosProcesados++;
